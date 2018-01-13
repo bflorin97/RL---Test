@@ -1,0 +1,367 @@
+#!/bin/bash
+
+all_stop()
+{
+    for ct in red green blue; do
+        /usr/bin/lxc-stop -n "$ct"
+    done
+    sleep 3
+}
+
+all_start()
+{
+    for ct in red green blue; do
+        /usr/bin/lxc-start -n "$ct" -d
+    done
+    sleep 5
+}
+
+all_etc_rclocal_eth0_down()
+{
+    for ct in red green blue; do
+        /bin/cat > /var/lib/lxc/"$ct"/rootfs/etc/rc.local <<EOF
+/sbin/ip link set dev eth0 down
+exit 0
+EOF
+    done
+}
+
+all_etc_rclocal_empty()
+{
+    for ct in red green blue; do
+        echo "exit 0" > /var/lib/lxc/"$ct"/rootfs/etc/rc.local
+    done
+}
+
+all_veth_down()
+{
+    for ct in red green blue; do
+        /sbin/ip link set dev veth-"$ct" down
+    done
+}
+
+all_veth_up()
+{
+    for ct in red green blue; do
+        /sbin/ip link set dev veth-"$ct" up
+    done
+}
+
+all_persistent_empty_eth0()
+{
+    for ct in red green blue; do
+        /bin/cat > /var/lib/lxc/"$ct"/rootfs/etc/network/interfaces <<EOF
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+EOF
+    done
+}
+
+all_nameserver()
+{
+    for ct in red green blue; do
+        echo "nameserver 8.8.8.8" > /var/lib/lxc/"$ct"/rootfs/etc/resolv.conf
+        echo "nameserver 8.8.8.8" > /var/lib/lxc/"$ct"/rootfs/etc/resolvconf/resolv.conf.d/tail
+    done
+}
+
+ct_persistent_static_eth0()
+{
+    if test $# -lt 3; then
+        echo "Unkown container, IP address and/or netmask"
+        return
+    fi
+    ct="$1"
+    ip="$2"
+    mask="$3"
+    /bin/cat > /var/lib/lxc/"$ct"/rootfs/etc/network/interfaces <<EOF
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+	address $ip
+	netmask $mask
+EOF
+
+    # In case of gateway argument.
+    if test $# -eq 4; then
+        echo -e "\tgateway $4" >> /var/lib/lxc/"$ct"/rootfs/etc/network/interfaces
+    fi
+}
+
+ct_veth()
+{
+    if test $# -lt 3; then
+        echo "Unkown container, IP address and/or netmask"
+        return
+    fi
+    ct="$1"
+    ip="$2"
+    mask="$3"
+
+    /sbin/ip address flush dev veth-"$ct"
+    /sbin/ip address add "$ip"/"$mask" dev veth-"$ct"
+    /sbin/ip link set dev veth-"$ct" up
+}
+
+disable_routing()
+{
+    /sbin/sysctl -q -w net.ipv4.ip_forward=0
+}
+
+enable_routing()
+{
+    /sbin/sysctl -q -w net.ipv4.ip_forward=1
+}
+
+masquerade()
+{
+    /sbin/iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+}
+
+clear_iptables()
+{
+    /sbin/iptables -t filter -F
+    /sbin/iptables -t nat -F
+}
+
+all_etc_hosts_empty()
+{
+    for ct in red green blue; do
+        /bin/cat > /var/lib/lxc/"$ct"/rootfs/etc/hosts <<END
+127.0.0.1   localhost
+
+# The following lines are desirable for IPv6 capable hosts
+::1     ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+END
+    done
+
+    /bin/cat > /etc/hosts <<END
+127.0.0.1   localhost
+
+# The following lines are desirable for IPv6 capable hosts
+::1     ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+END
+}
+
+all_etc_hosts_fill()
+{
+    host="$1"
+    red="$2"
+    green="$3"
+    blue="$4"
+
+    for ct in red green blue; do
+        /bin/cat > /var/lib/lxc/"$ct"/rootfs/etc/hosts <<END
+127.0.0.1   localhost
+
+$host   host
+$red    red
+$green  green
+$blue   blue
+
+# The following lines are desirable for IPv6 capable hosts
+::1     ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+END
+    done
+
+    /bin/cat > /etc/hosts <<END
+127.0.0.1   localhost
+
+$host   host
+$red    red
+$green  green
+$blue   blue
+
+# The following lines are desirable for IPv6 capable hosts
+::1     ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+END
+}
+
+ct_etc_hosts_fill()
+{
+    ct="$1"
+    host="$2"
+    red="$3"
+    green="$4"
+    blue="$5"
+
+    /bin/cat > /var/lib/lxc/"$ct"/rootfs/etc/hosts <<END
+127.0.0.1   localhost
+
+$host   host
+$red    red
+$green  green
+$blue   blue
+
+# The following lines are desirable for IPv6 capable hosts
+::1     ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+END
+}
+
+host_etc_hosts_fill()
+{
+    host="$1"
+    red="$2"
+    green="$3"
+    blue="$4"
+
+    /bin/cat > /etc/hosts <<END
+127.0.0.1   localhost
+
+$host   host
+$red    red
+$green  green
+$blue   blue
+
+# The following lines are desirable for IPv6 capable hosts
+::1     ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+END
+}
+
+ct_create_user()
+{
+    ct="$1"
+    user="$2"
+    password="$3"
+
+    /usr/bin/ssh -o StrictHostKeyChecking=no -l root "$ct" "/usr/sbin/userdel -r $user > /dev/null 2>&1" > /dev/null 2>&1
+    /usr/bin/ssh -o StrictHostKeyChecking=no -l root "$ct" "/usr/sbin/useradd -m -d /home/$user -s /bin/bash -l $user"
+    /usr/bin/ssh -o StrictHostKeyChecking=no -l root "$ct" "echo '$user:$password' | /usr/sbin/chpasswd"
+}
+
+ct_home_fill()
+{
+    ct="$1"
+    user="$2"
+
+    /bin/rm -rf /var/lib/lxc/"$ct"/rootfs/home/"$user"/examen
+    /bin/mkdir -p /var/lib/lxc/"$ct"/rootfs/home/"$user"/examen/test1/test11/
+    /bin/mkdir -p /var/lib/lxc/"$ct"/rootfs/home/"$user"/examen/test2/test11/
+    /bin/mkdir -p /var/lib/lxc/"$ct"/rootfs/home/"$user"/examen/test3/test11/
+    echo "x - 1 = 0" > /var/lib/lxc/"$ct"/rootfs/home/"$user"/examen/test1/simple
+    echo "x^2 - 3x + 2 = 0" > /var/lib/lxc/"$ct"/rootfs/home/"$user"/examen/test1/test11/classic
+    echo "x^3 - 6x^2 + 11x -6 = 0" > /var/lib/lxc/"$ct"/rootfs/home/"$user"/examen/test2/veryclassic
+    /usr/bin/ssh -o StrictHostKeyChecking=no -l root "$ct" "/bin/chown -R $user:$user ~$user/examen"
+}
+
+host_var_www_fill()
+{
+    # Generate files for HTTP server
+    /bin/rm -rf /var/www/examen
+    /bin/mkdir -p /var/www/examen/test5/test51/
+    /bin/mkdir -p /var/www/examen/test6/test51/
+    /bin/mkdir -p /var/www/examen/test7/test51/
+    echo "x - 1 = 0" > /var/www/examen/test5/simple
+    echo "x^2 - 3x + 2 = 0" > /var/www/examen/test5/test51/classic
+    echo "x^3 - 6x^2 + 11x -6 = 0" > /var/www/examen/test6/veryclassic
+}
+
+prepare_task_4()
+{
+    all_stop
+    all_etc_rclocal_eth0_down
+    all_persistent_empty_eth0
+    all_nameserver
+    all_etc_hosts_empty
+    all_start
+    all_veth_down
+    disable_routing
+    clear_iptables
+}
+
+prepare_task_5()
+{
+    all_stop
+    all_etc_rclocal_empty
+    ct_persistent_static_eth0 red 192.168.1.2 255.255.255.0 192.168.1.1
+    ct_persistent_static_eth0 green 192.168.2.2 255.255.255.0 192.168.2.1
+    ct_persistent_static_eth0 blue 192.168.3.2 255.255.255.0 192.168.3.1
+    ct_etc_hosts_fill red 192.168.1.1 192.168.1.2 192.168.2.2 192.168.3.2
+    ct_etc_hosts_fill green 192.168.2.1 192.168.1.2 192.168.2.2 192.168.3.2
+    ct_etc_hosts_fill blue 192.168.3.1 192.168.1.2 192.168.2.2 192.168.3.2
+    all_nameserver
+    all_start
+    ct_veth red 192.168.1.1 255.255.255.0
+    ct_veth green 192.168.2.1 255.255.255.0
+    ct_veth blue 192.168.3.1 255.255.255.0
+    host_etc_hosts_fill 192.168.1.1 192.168.1.2 192.168.2.2 192.168.3.2
+    enable_routing
+    clear_iptables
+    masquerade
+    ct_create_user red ana student
+    ct_create_user green bogdan student
+    ct_home_fill red student
+}
+
+prepare_task_6()
+{
+    all_stop
+    all_etc_rclocal_empty
+    ct_persistent_static_eth0 red 192.168.1.2 255.255.255.0 192.168.1.1
+    ct_persistent_static_eth0 green 192.168.2.2 255.255.255.0 192.168.2.1
+    ct_persistent_static_eth0 blue 192.168.3.2 255.255.255.0 192.168.3.1
+    ct_etc_hosts_fill red 192.168.1.1 192.168.1.2 192.168.2.2 192.168.3.2
+    ct_etc_hosts_fill green 192.168.2.1 192.168.1.2 192.168.2.2 192.168.3.2
+    ct_etc_hosts_fill blue 192.168.3.1 192.168.1.2 192.168.2.2 192.168.3.2
+    all_nameserver
+    all_start
+    ct_veth red 192.168.1.1 255.255.255.0
+    ct_veth green 192.168.2.1 255.255.255.0
+    ct_veth blue 192.168.3.1 255.255.255.0
+    host_etc_hosts_fill 192.168.1.1 192.168.1.2 192.168.2.2 192.168.3.2
+    enable_routing
+    clear_iptables
+    masquerade
+    host_var_www_fill
+}
+
+if test $# -eq 1; then
+    if test $1 -eq 4; then
+        prepare_task_4
+    fi
+    if test $1 -eq 5; then
+        prepare_task_5
+    fi
+    if test $1 -eq 6; then
+        prepare_task_6
+    fi
+    exit 0
+else
+    echo "Usage: $0 <task-index>" 1>&2
+    echo
+    exit 1
+fi
